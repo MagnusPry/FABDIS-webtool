@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FABDIS Data Transformer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+
+        .drop-zone {
+            border: 2px dashed #cbd5e1;
+            transition: all 0.2s ease-in-out;
+        }
+
+        .drop-zone.dragover {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+
+        .animate-pulse-light {
+            animation: pulse-light 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes pulse-light {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 flex items-center justify-center min-h-screen p-6">
+
+    <div class="bg-white p-10 rounded-3xl shadow-2xl w-full max-w-3xl border border-gray-200">
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-extrabold text-gray-900 tracking-tight mb-2">FABDIS Data Transformer 🚀</h1>
+            <p class="text-lg text-gray-500">
+                Effortlessly convert your FABDIS files to the correct format.
+            </p>
+        </div>
+
+        <div class="flex flex-col md:flex-row gap-8 items-center md:items-start">
+            <div class="flex-1 w-full space-y-4">
+                <div id="drop-zone" class="drop-zone p-10 text-center rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">
+                    <input type="file" id="file-input" class="hidden" accept=".csv, .xlsx">
+                    <div class="flex flex-col items-center justify-center space-y-2">
+                        <i class="fas fa-cloud-upload-alt text-4xl text-gray-400"></i>
+                        <p class="text-gray-700 font-semibold">Drag & Drop your file here</p>
+                        <p class="text-gray-500 text-sm">or <span class="text-blue-600 font-medium">click to browse</span></p>
+                    </div>
+                </div>
+                <div id="status-message" class="text-gray-600 text-sm font-medium min-h-[20px] text-center"></div>
+            </div>
+
+            <div class="flex-1 w-full md:w-auto space-y-4 md:pt-4">
+                <button id="transform-btn" class="w-full flex items-center justify-center bg-green-600 hover:bg-green-700 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-300 shadow-md opacity-50 cursor-not-allowed transform hover:scale-105" disabled>
+                    <i class="fas fa-magic mr-3"></i>
+                    <span id="transform-btn-text">Transform & Export</span>
+                </button>
+                
+                <a id="download-link" href="#" class="hidden w-full flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-300 shadow-md no-underline transform hover:scale-105">
+                    <i class="fas fa-download mr-3"></i>
+                    Download Transformed File
+                </a>
+            </div>
+        </div>
+
+        <div id="message-box" class="fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center hidden p-4 z-50">
+            <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm text-center">
+                <i id="message-icon" class="fas fa-exclamation-circle text-red-500 text-4xl mb-4"></i>
+                <div id="message-box-content" class="text-gray-800 font-medium text-lg mb-6"></div>
+                <button id="message-box-ok" class="w-full bg-blue-600 text-white font-medium py-3 px-4 rounded-xl hover:bg-blue-700 transition-colors">Got it</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+document.addEventListener('DOMContentLoaded', () => {
+    const fileInput = document.getElementById('file-input');
+    const dropZone = document.getElementById('drop-zone');
+    const transformBtn = document.getElementById('transform-btn');
+    const transformBtnText = document.getElementById('transform-btn-text');
+    const statusMessage = document.getElementById('status-message');
+    const downloadLink = document.getElementById('download-link');
+    const messageBox = document.getElementById('message-box');
+    const messageBoxContent = document.getElementById('message-box-content');
+    const messageBoxOk = document.getElementById('message-box-ok');
+    const messageIcon = document.getElementById('message-icon');
+    let uploadedFile = null;
+
+    const showMessage = (message, type = 'error') => {
+        messageBoxContent.textContent = message;
+        messageIcon.className = `text-4xl mb-4 ${type === 'success' ? 'fas fa-check-circle text-green-500' : 'fas fa-exclamation-circle text-red-500'}`;
+        messageBox.classList.remove('hidden');
+    };
+
+    messageBoxOk.addEventListener('click', () => {
+        messageBox.classList.add('hidden');
+    });
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, e => {
+            e.preventDefault();
+            e.stopPropagation();
+        }, false);
+    });
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
+    });
+
+    dropZone.addEventListener('drop', e => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        handleFile(files[0]);
+    });
+
+    dropZone.addEventListener('click', () => {
+        fileInput.click();
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        handleFile(e.target.files[0]);
+    });
+
+    function handleFile(file) {
+        if (file) {
+            uploadedFile = file;
+            statusMessage.textContent = `✅ File selected: ${file.name}`;
+            transformBtn.disabled = false;
+            transformBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            downloadLink.classList.add('hidden');
+        } else {
+            uploadedFile = null;
+            statusMessage.textContent = '';
+            transformBtn.disabled = true;
+            transformBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+    }
+
+    transformBtn.addEventListener('click', () => {
+        if (!uploadedFile) {
+            showMessage('Please select a file first.');
+            return;
+        }
+
+        statusMessage.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Processing...';
+        transformBtn.disabled = true;
+        transformBtn.classList.add('opacity-50', 'cursor-not-allowed', 'animate-pulse-light');
+        transformBtnText.textContent = 'Processing...';
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const fileExtension = uploadedFile.name.split('.').pop().toLowerCase();
+                const allRows = [];
+                const allHeaders = new Set();
+                
+                let newWb = XLSX.utils.book_new();
+
+                if (fileExtension === 'xlsx') {
+                    const workbook = XLSX.read(event.target.result, { type: 'array' });
+                    
+                    workbook.SheetNames.forEach(sheetName => {
+                        const worksheet = workbook.Sheets[sheetName];
+                        const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true });
+
+                        if (sheetData.length > 0) {
+                            const currentHeader = sheetData[0].map(h => String(h).trim().toLowerCase());
+                            if (currentHeader.includes('refciale') && currentHeader.includes('marque')) {
+                                const transformedData = transformMediaData(sheetData);
+                                transformedData.header.forEach(h => allHeaders.add(h));
+                                allRows.push({
+                                    originalHeader: transformedData.header,
+                                    data: transformedData.data
+                                });
+                            }
+                        }
+                    });
+
+                    if (allRows.length === 0) {
+                        throw new Error("No sheets with 'refciale' and 'marque' columns found.");
+                    }
+
+                    // Create the single combined header
+                    const combinedHeader = Array.from(allHeaders);
+                    const finalData = [combinedHeader];
+                    const mergedDataMap = new Map();
+
+                    allRows.forEach(sheet => {
+                        sheet.data.forEach(originalRow => {
+                            const refCiale = originalRow[sheet.originalHeader.indexOf('PUP_REFCIALE')];
+                            const marque = originalRow[sheet.originalHeader.indexOf('MAR')];
+                            const key = `${refCiale}-${marque}`;
+
+                            if (!mergedDataMap.has(key)) {
+                                mergedDataMap.set(key, new Array(combinedHeader.length).fill(''));
+                                mergedDataMap.get(key)[combinedHeader.indexOf('PUP_REFCIALE')] = refCiale;
+                                mergedDataMap.get(key)[combinedHeader.indexOf('MAR')] = marque;
+                            }
+                            
+                            sheet.originalHeader.forEach((h, i) => {
+                                const combinedIndex = combinedHeader.indexOf(h);
+                                if (combinedIndex !== -1 && i !== sheet.originalHeader.indexOf('PUP_REFCIALE') && i !== sheet.originalHeader.indexOf('MAR')) {
+                                    const existingValue = mergedDataMap.get(key)[combinedIndex];
+                                    const newValue = originalRow[i] !== undefined ? originalRow[i] : '';
+                                    if (existingValue && newValue) {
+                                        mergedDataMap.get(key)[combinedIndex] += ';' + newValue;
+                                    } else {
+                                        mergedDataMap.get(key)[combinedIndex] = newValue;
+                                    }
+                                }
+                            });
+                        });
+                    });
+                    
+                    mergedDataMap.forEach(row => finalData.push(row));
+                    
+                    const newWs = XLSX.utils.aoa_to_sheet(finalData);
+                    XLSX.utils.book_append_sheet(newWb, newWs, "Merged & Transformed");
+                    
+                    statusMessage.textContent = `✅ Transformation complete! Merged data from all sheets.`;
+                    downloadLink.download = 'merged_data_with_all_headers.xlsx';
+
+                } else if (fileExtension === 'csv') {
+                    const csvContent = event.target.result;
+                    const rawRows = csvContent.trim().split('\n').map(row => row.split(','));
+                    const currentHeader = rawRows[0].map(h => String(h).trim().toLowerCase());
+
+                    if (currentHeader.includes('refciale') && currentHeader.includes('marque')) {
+                        const transformedResult = transformMediaData(rawRows);
+                        const finalData = [transformedResult.header, ...transformedResult.data];
+                        const newWs = XLSX.utils.aoa_to_sheet(finalData);
+                        XLSX.utils.book_append_sheet(newWb, newWs, "Merged & Transformed");
+                    } else {
+                        throw new Error("CSV file must contain 'refciale' and 'marque' columns.");
+                    }
+                    
+                    statusMessage.textContent = `✅ Transformation complete! CSV processed and transformed.`;
+                    downloadLink.download = 'transformed_csv.xlsx';
+                } else {
+                    throw new Error("Unsupported file type. Please upload a .xlsx or .csv file.");
+                }
+
+                if (allRows.length > 0) {
+                    const wbout = XLSX.write(newWb, { bookType: 'xlsx', type: 'array' });
+                    const blob = new Blob([wbout], { type: 'application/octet-stream' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    downloadLink.href = url;
+                    downloadLink.classList.remove('hidden');
+                } else {
+                    throw new Error("No valid data was transformed. Check your file format and content.");
+                }
+                
+                transformBtn.disabled = false;
+                transformBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'animate-pulse-light');
+                transformBtnText.textContent = 'Transform & Export';
+
+            } catch (error) {
+                statusMessage.textContent = '❌ Error during transformation.';
+                transformBtn.disabled = false;
+                transformBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'animate-pulse-light');
+                transformBtnText.textContent = 'Transform & Export';
+                showMessage(`An error occurred: ${error.message}`);
+                console.error("Transformation error:", error);
+            }
+        };
+
+        if (uploadedFile.name.split('.').pop().toLowerCase() === 'xlsx') {
+            reader.readAsArrayBuffer(uploadedFile);
+        } else {
+            reader.readAsText(uploadedFile);
+        }
+    });
+
+    function transformMediaData(dataArray) {
+        if (dataArray.length < 2) {
+            return { header: [], data: [] };
+        }
+
+        const header = dataArray[0].map(col => String(col).trim());
+        const data = dataArray.slice(1);
+
+        const refc_idx = header.map(h => h.toLowerCase()).indexOf('refciale');
+        const marque_idx = header.map(h => h.toLowerCase()).indexOf('marque');
+
+        if (refc_idx === -1 || marque_idx === -1) {
+            return { header: [], data: [] };
+        }
+
+        const other_column_names = header.filter((col, i) => i !== refc_idx && i !== marque_idx);
+        const groupedData = {};
+
+        data.forEach(row => {
+            if (!row || row.length <= Math.max(refc_idx, marque_idx)) return;
+
+            const key = `${row[refc_idx]}-${row[marque_idx]}`;
+            if (!groupedData[key]) {
+                groupedData[key] = {
+                    REFCIALE: row[refc_idx],
+                    MARQUE: row[marque_idx],
+                    values: {}
+                };
+                other_column_names.forEach(col => {
+                    groupedData[key].values[col] = [];
+                });
+            }
+
+            other_column_names.forEach(col => {
+                const originalColIndex = header.indexOf(col);
+                const value = row[originalColIndex] !== undefined && row[originalColIndex] !== null ? String(row[originalColIndex]).trim() : '';
+                groupedData[key].values[col].push(value);
+            });
+        });
+
+        const newHeader = ['PUP_REFCIALE', 'MAR', ...other_column_names];
+        const newRows = [];
+
+        Object.values(groupedData).forEach(item => {
+            const row = [item.REFCIALE, item.MARQUE];
+            other_column_names.forEach(col => {
+                let values = item.values[col] || [];
+                let joinedValues = values.join(';');
+                if (col.toUpperCase() === 'MURL' || col.toUpperCase() === 'MURLT') {
+                    joinedValues += ';';
+                }
+                row.push(joinedValues);
+            });
+            newRows.push(row);
+        });
+
+        return { header: newHeader, data: newRows };
+    }
+});
+</script>
+<footer>
+    <footer style="position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    font-size: small;
+    color: red;
+    background-color: #f8fafc;
+    padding: 10px;
+    z-index: 1000;">With love PIM syndication team! ♥</footer>
+</body>
+</html>
